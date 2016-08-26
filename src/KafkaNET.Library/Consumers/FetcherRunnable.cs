@@ -80,7 +80,7 @@ namespace Kafka.Client.Consumers
             {
                 try
                 {
-                    IEnumerable<PartitionTopicInfo> fetchablePartitionTopicInfos = _partitionTopicInfos.Where(pti => pti.NextRequestOffset - pti.ConsumeOffset < _fetchBufferLength);
+                    IEnumerable<PartitionTopicInfo> fetchablePartitionTopicInfos = _partitionTopicInfos.Where(pti => pti.GetMessagesCount() < _fetchBufferLength);
 
                     long read = 0;
 
@@ -90,8 +90,8 @@ namespace Kafka.Client.Consumers
                             new FetchRequestBuilder().
                                 CorrelationId(reqId).
                                 ClientId(_config.ConsumerId ?? _name).
-                                MaxWait(0).
-                                MinBytes(0);
+                                MaxWait(_config.MaxFetchWaitMs).
+                                MinBytes(_config.FetchMinBytes);
                         fetchablePartitionTopicInfos.ForEach(pti => builder.AddFetch(pti.Topic, pti.PartitionId, pti.NextRequestOffset, _config.FetchSize));
 
                         FetchRequest fetchRequest = builder.Build();
@@ -125,9 +125,7 @@ namespace Kafka.Client.Consumers
                                                                                 partitionTopicInfo.PartitionId);
                                         if (resetOffset >= 0)
                                         {
-                                            partitionTopicInfo.FetchOffset = resetOffset;
-                                            partitionTopicInfo.ConsumeOffset = resetOffset;
-
+                                            partitionTopicInfo.ResetOffset(resetOffset);
                                             Logger.InfoFormat("{0} marked as done.", partitionTopicInfo);
                                         }
                                     }
@@ -220,6 +218,14 @@ namespace Kafka.Client.Consumers
             ZkUtils.UpdatePersistentPath(_zkClient, topicDirs.ConsumerOffsetDir + "/" + partitionId, offsetFound.ToString(CultureInfo.InvariantCulture));
 
             return offsetFound;
+        }
+
+        ~FetcherRunnable()
+        {
+            if (_simpleConsumer != null)
+            {
+                _simpleConsumer.Dispose();
+            }
         }
     }
 }
